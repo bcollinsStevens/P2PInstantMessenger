@@ -10,7 +10,7 @@ use tui::{
     layout::{Layout, Direction, Constraint},
     text::{Span, Spans, Text},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem, Paragraph}
+    widgets::{Block, Borders, Paragraph}
 };
 
 use std::{
@@ -22,8 +22,7 @@ use std::{
         Stdout
     },
     cmp::{
-        min,
-        max
+        min
     },
     u16::MAX as U16_MAX,
     convert::{
@@ -70,7 +69,9 @@ macro_rules! normal_tooltip {
                 Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" to exit, "),
                 Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to start editing."),
+                Span::raw(" to start editing, "),
+                Span::styled("UP/DOWN", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to scroll."),
             ]
         ))
     }
