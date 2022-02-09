@@ -148,7 +148,7 @@ impl ChatInterface {
                 InputMode::Editing => match key.code {
                     KeyCode::Enter => {
                         let message:String = self.input.drain(..).collect();
-                        self.messages.push(message);
+                        self.push_message(message);
                     }
                     KeyCode::Char(c) => {
                         self.input.push(c);
