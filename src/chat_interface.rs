@@ -5,90 +5,72 @@ use crossterm::{
 };
 
 use tui::{
-    Terminal,
-    backend::{CrosstermBackend},
-    layout::{Layout, Direction, Constraint},
-    text::{Span, Spans, Text},
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Paragraph}
+    text::{Span, Spans, Text},
+    widgets::{Block, Borders, Paragraph},
+    Terminal,
 };
 
-use std::{
-    error::{
-        Error
-    },
-    io,
-    io::{
-        Stdout
-    },
-    cmp::{
-        min
-    },
-    u16::MAX as U16_MAX,
-    convert::{
-        TryFrom
-    }
-};
+use std::{cmp::min, convert::TryFrom, error::Error, io, io::Stdout, u16::MAX as U16_MAX};
 
 use unicode_width::UnicodeWidthStr;
 
 enum InputMode {
     Normal,
-    Editing
+    Editing,
 }
 
 pub struct ChatInterface {
-    pub input: String,
+    input: String,
     input_mode: InputMode,
-    messages: Vec<String>,
+    chat_history: Vec<String>,
     terminal: Terminal<CrosstermBackend<Stdout>>,
     quit_flag: bool,
-    scroll_y: u16
+    scroll_y: u16,
 }
 
 macro_rules! layout {
     () => {
         Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints(
-            [
-                Constraint::Min(1), // The Chat History
-                Constraint::Length(3), // The Input Field
-                Constraint::Length(1), // The Tooltip Text
-            ].as_ref()
-        )
-    }
+            .direction(Direction::Vertical)
+            .margin(2)
+            .constraints(
+                [
+                    Constraint::Min(1),    // The Chat History
+                    Constraint::Length(3), // The Input Field
+                    Constraint::Length(1), // The Tooltip Text
+                ]
+                .as_ref(),
+            )
+    };
 }
 
 macro_rules! normal_tooltip {
     () => {
-        Text::from(Spans::from(
-            vec![
-                Span::raw("Press "),
-                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to exit, "),
-                Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to start editing, "),
-                Span::styled("UP/DOWN", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to scroll."),
-            ]
-        ))
-    }
+        Text::from(Spans::from(vec![
+            Span::raw("Press "),
+            Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" to exit, "),
+            Span::styled("e", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" to start editing, "),
+            Span::styled("UP/DOWN", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" to scroll."),
+        ]))
+    };
 }
 
 macro_rules! editing_tooltip {
     () => {
-        Text::from(Spans::from(
-            vec![
-                Span::raw("Press "),
-                Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to stop editing, "),
-                Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to record the message"),
-            ]
-        ))
-    }
+        Text::from(Spans::from(vec![
+            Span::raw("Press "),
+            Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" to stop editing, "),
+            Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" to record the message"),
+        ]))
+    };
 }
 
 impl ChatInterface {
@@ -102,10 +84,10 @@ impl ChatInterface {
         let interface = ChatInterface {
             input: String::new(),
             input_mode: InputMode::Normal,
-            messages: Vec::new(),
+            chat_history: Vec::new(),
             terminal: terminal,
             quit_flag: false,
-            scroll_y: 0
+            scroll_y: 0,
         };
 
         Ok(interface)
@@ -118,7 +100,11 @@ impl ChatInterface {
 
     pub fn dinit(&mut self) -> Result<(), Box<dyn Error>> {
         disable_raw_mode()?;
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+        execute!(
+            self.terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
         self.terminal.show_cursor()?;
         Ok(())
     }
@@ -147,8 +133,10 @@ impl ChatInterface {
                 },
                 InputMode::Editing => match key.code {
                     KeyCode::Enter => {
-                        let message:String = self.input.drain(..).collect();
-                        self.push_message(message);
+                        if self.input.len() > 0 { // Dont send empty input
+                            let input: String = self.input.drain(..).collect();
+                            self.handle_input(input);
+                        }
                     }
                     KeyCode::Char(c) => {
                         self.input.push(c);
@@ -166,10 +154,10 @@ impl ChatInterface {
         Ok(())
     }
 
-    pub fn check_quit(&self) -> bool{
+    pub fn check_quit(&self) -> bool {
         return self.quit_flag;
     }
-    
+
     pub fn draw(&mut self) -> Result<(), Box<dyn Error>> {
         self.terminal.draw(|frame| {
             let rects = layout!().split(frame.size());
@@ -179,7 +167,7 @@ impl ChatInterface {
 
             let tooltip_text = match self.input_mode {
                 InputMode::Normal => normal_tooltip!(),
-                InputMode::Editing => editing_tooltip!()
+                InputMode::Editing => editing_tooltip!(),
             };
 
             let tooltip_widget = Paragraph::new(tooltip_text);
@@ -196,39 +184,49 @@ impl ChatInterface {
             match self.input_mode {
                 InputMode::Normal => { // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
                 }
-                InputMode::Editing => { // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+                InputMode::Editing => {
+                    // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
                     frame.set_cursor(
                         input_rect.x + self.input.width() as u16 + 1, // Put cursor past the end of the input text
-                        input_rect.y + 1 // Move one line down, from the border to the input line
+                        input_rect.y + 1, // Move one line down, from the border to the input line
                     )
                 }
             }
 
-            let mut messages_spans: Vec<Spans> = self.messages.iter().enumerate()
+            let mut message_spans: Vec<Spans> = self
+                .chat_history
+                .iter()
+                .enumerate()
                 .map(|(i, m)| {
                     Spans::from(vec![
                         Span::raw(format!("{}: ", i)),
                         Span::raw(m),
-                        Span::raw("\n")
+                        Span::raw("\n"),
                     ])
-                }).collect();
+                })
+                .collect();
 
-            let num_messages = match u16::try_from(messages_spans.len()).ok() {
+            let num_messages = match u16::try_from(message_spans.len()).ok() {
                 Some(v) => v,
-                None => 0
+                None => 0,
             };
             self.scroll_y = min(self.scroll_y, num_messages);
             if self.scroll_y > 0 && self.scroll_y < num_messages {
-                messages_spans.insert(usize::from(self.scroll_y), Spans::from(vec![
-                    Span::raw(format!("...{} messages above\n", self.scroll_y))
-                ]));
+                message_spans.insert(
+                    usize::from(self.scroll_y),
+                    Spans::from(vec![Span::raw(format!(
+                        "...{} messages above\n",
+                        self.scroll_y
+                    ))]),
+                );
             } else if self.scroll_y >= num_messages {
-                messages_spans.push(Spans::from(vec![
-                    Span::raw(format!("...{} messages above\n", self.scroll_y))
-                ]));
+                message_spans.push(Spans::from(vec![Span::raw(format!(
+                    "...{} messages above\n",
+                    self.scroll_y
+                ))]));
             }
 
-            let chat_history_widget = Paragraph::new(Text::from(messages_spans))
+            let chat_history_widget = Paragraph::new(Text::from(message_spans))
                 .block(Block::default().borders(Borders::ALL).title("Chat History"))
                 .scroll((self.scroll_y, 0));
             frame.render_widget(chat_history_widget, chat_history_rect);
@@ -236,7 +234,11 @@ impl ChatInterface {
         Ok(())
     }
 
-    pub fn push_message(&mut self, message:String) {
-        self.messages.push(message);
+    fn handle_input(&mut self, input: String) {
+        self.chat_history.push(input);
+    }
+
+    pub fn push_message(&mut self, message: String) {
+        self.chat_history.push(message);
     }
 }
